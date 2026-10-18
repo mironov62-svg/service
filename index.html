@@ -83,7 +83,7 @@
     .files-list a { color: #2d6cdf; font-size: 14px; text-decoration: none; }
     .files-list a:active { opacity: 0.7; }
 
-    /* Кнопки стадий (цвета под воронку) */
+    /* Кнопки стадий */
     .stage-buttons { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
     .stage-btn {
         display: flex; justify-content: space-between; align-items: center;
@@ -94,7 +94,6 @@
     .stage-btn:active { opacity: 0.8; }
     .stage-btn.current { border-width: 2px; font-weight: 700; cursor: default; }
     
-    /* Стили для конкретных стадий */
     .stage-btn[data-stage="1"] { border-color: #e6e600; color: #333; }
     .stage-btn[data-stage="1"].current { background: #e6e600; color: #000; }
     
@@ -154,6 +153,13 @@
         align-items: center; gap: 6px; margin-top: 4px;
     }
     .btn-add-file:active { background: #f5f5f5; }
+
+    /* Внимание / Ошибка в модалке */
+    .validation-error {
+        background: #fee; color: #c00; padding: 12px; border-radius: 8px;
+        font-size: 14px; margin-top: 16px; margin-bottom: 8px; font-weight: 500;
+        border-left: 4px solid #c00;
+    }
 </style>
 </head>
 <body>
@@ -226,6 +232,7 @@ const FIELD_DATE_START   = 'BEGINDATE';
 let currentDealId = null;
 let currentDeal = null;
 let contactsCache = {};
+let validationError = '';
 
 function showToast(msg) {
     const t = document.getElementById('toast');
@@ -296,7 +303,6 @@ function formatDate(field) {
     return field;
 }
 
-// Обновленная функция получения контакта с телефоном
 async function fetchContactInfo(contactId) {
     if (!contactId) return null;
     if (contactsCache[contactId]) return contactsCache[contactId];
@@ -315,9 +321,8 @@ async function fetchContactInfo(contactId) {
             
             let html = escapeHtml(name);
             if (phones.length > 0) {
-                // Формируем ссылки tel: для звонка
                 const phoneLinks = phones.map(p => `<a href="tel:${p.replace(/[^\d+]/g, '')}" style="color:#2d6cdf; text-decoration:none;">${escapeHtml(p)}</a>`).join(', ');
-                html += ` (<a href="tel:${phones[0].replace(/[^\d+]/g, '')}" style="color:#2d6cdf; text-decoration:none;">${escapeHtml(phones[0])}</a>)`;
+                html += ` (${phoneLinks})`;
             }
             
             contactsCache[contactId] = html;
@@ -415,6 +420,7 @@ function escapeHtml(s) {
 // ============================================================
 async function openDeal(id) {
     currentDealId = id;
+    validationError = ''; // Сбрасываем ошибку при открытии
     const overlay = document.getElementById('modalOverlay');
     const modal = document.getElementById('modalContent');
     modal.innerHTML = '<div class="loading">Загрузка…</div>';
@@ -428,9 +434,10 @@ async function openDeal(id) {
 
         const contactInfo = await fetchContactInfo(deal.CONTACT_ID);
         
-        // Обработка файлов (получаем ссылки)
+        // Обработка файлов
         let filesHtml = '—';
         if (!isEmpty(deal[FIELD_FILES])) {
+            // API возвращает массив ID файлов
             const fileIds = Array.isArray(deal[FIELD_FILES]) ? deal[FIELD_FILES] : [deal[FIELD_FILES]];
             const fileLinks = await Promise.all(fileIds.map(async fId => {
                 const idVal = typeof fId === 'object' ? (fId.ID || fId.id || fId.FILE_ID) : fId;
@@ -439,7 +446,7 @@ async function openDeal(id) {
                     if (diskRes.result && diskRes.result.DOWNLOAD_URL) {
                         return `<a href="${diskRes.result.DOWNLOAD_URL}" target="_blank">📎 ${escapeHtml(diskRes.result.NAME)}</a>`;
                     }
-                } catch(e) { /* ignore */ }
+                } catch(e) { console.error("Ошибка файла", e); }
                 return `<span>📎 Файл #${idVal}</span>`;
             }));
             filesHtml = `<div class="files-list">${fileLinks.join('')}</div>`;
@@ -457,7 +464,6 @@ async function openDeal(id) {
                     </button>`;
         }).join('');
 
-        // Генерируем HTML только для непустых полей
         let fieldsHtml = '';
 
         if (!isEmpty(deal[FIELD_ADDRESS])) {
@@ -482,22 +488,20 @@ async function openDeal(id) {
             fieldsHtml += `<div class="field"><div class="field-label">Контакт</div><div class="field-value">${contactInfo}</div></div>`;
         }
 
-        // --- БЛОК ФАЙЛОВ И ФОТО ---
+        // Блок файлов и добавления фото
         let filesBlockHtml = '';
         if (filesHtml !== '—') {
             filesBlockHtml += `<div class="field"><div class="field-label">Файлы по сделке</div><div class="field-value">${filesHtml}</div></div>`;
         }
-        // Кнопка добавления фото всегда видна
+        
         filesBlockHtml += `
             <div class="field">
-                <input type="file" id="fileInput" accept="image/*" multiple style="display:none;" onchange="uploadFiles()">
-                <button class="btn-add-file" onclick="document.getElementById('fileInput').click()">
-                    📷 Добавить фото
-                </button>
+                <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
+                <button class="btn-add-file" id="btnAddPhoto">📷 Добавить фото</button>
             </div>
         `;
 
-        // --- БЛОК ВЫПОЛНЕННЫХ РАБОТ ---
+        // Блок выполненных работ
         const workDoneText = extractText(deal[FIELD_WORK_DONE]);
         const hasWorkDone = !isEmpty(deal[FIELD_WORK_DONE]);
 
@@ -516,6 +520,9 @@ async function openDeal(id) {
             </div>`;
         }
 
+        // Блок ошибки (если есть)
+        let errorHtml = validationError ? `<div class="validation-error">${validationError}</div>` : '';
+
         modal.innerHTML = `
             <button class="modal-close" onclick="closeModal()">✕</button>
             <h3>${escapeHtml(deal.TITLE || ('Сделка #' + deal.ID))}</h3>
@@ -523,6 +530,8 @@ async function openDeal(id) {
             ${fieldsHtml}
             ${filesBlockHtml}
             ${workDoneHtml}
+
+            ${errorHtml}
 
             <div class="stage-buttons">
                 ${buttonsHtml}
@@ -533,6 +542,15 @@ async function openDeal(id) {
                 Закрыть
             </button>
         `;
+
+        // Привязываем обработчик события клика к кнопке добавления фото
+        document.getElementById('btnAddPhoto').addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+
+        // Привязываем обработчик выбора файла
+        document.getElementById('fileInput').addEventListener('change', uploadFiles);
+
     } catch (e) {
         modal.innerHTML = `
             <button class="modal-close" onclick="closeModal()">✕</button>
@@ -549,7 +567,7 @@ async function uploadFiles() {
     if (!input || !input.files.length) return;
 
     const files = input.files;
-    const btn = document.querySelector('.btn-add-file');
+    const btn = document.getElementById('btnAddPhoto');
     const oldText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = 'Загрузка...';
@@ -641,6 +659,7 @@ function closeModal() {
     document.getElementById('modalOverlay').classList.remove('active');
     currentDealId = null;
     currentDeal = null;
+    validationError = '';
 }
 
 // ============================================================
@@ -654,10 +673,15 @@ async function changeStage(stageId) {
     if (stageId === '5') {
         const workDoneField = currentDeal[FIELD_WORK_DONE];
         if (isEmpty(workDoneField)) {
-            showToast('Сначала заполните "Выполненные работы"');
+            // Записываем текст ошибки и перерисовываем модалку
+            validationError = 'Нельзя перевести в "Готово": сначала заполните поле "Выполненные работы".';
+            openDeal(currentDealId);
             return;
         }
     }
+
+    // Сбрасываем ошибку, если проверка пройдена
+    validationError = '';
 
     const stageName = STAGES.find(s => s.id === stageId)?.name || stageId;
     document.querySelectorAll('.stage-btn').forEach(b => b.disabled = true);
