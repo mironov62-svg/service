@@ -216,16 +216,38 @@ function isEmpty(field) {
     return String(field).trim() === '—';
 }
 
+// Очистка текста от BB-кода и HTML-тегов
+function cleanText(str) {
+    if (!str) return '';
+    return String(str)
+        // Удаляем BB-код (например, [p], [/p], [b], [br])
+        .replace(/\[\/?[a-zA-Z0-9=\-\s"'#]+\]/g, ' ')
+        // Удаляем HTML-теги (например, <p>, <br>, <strong>)
+        .replace(/<[^>]*>/g, ' ')
+        // Заменяем HTML-сущность неразрывного пробела на обычный
+        .replace(/&nbsp;/g, ' ')
+        // Заменяем множественные пробелы на один
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function extractText(field) {
     if (isEmpty(field)) return '—';
+    
+    let result = '';
     if (Array.isArray(field)) {
-        return field.map(item => {
+        result = field.map(item => {
             if (item && typeof item === 'object') return item.VALUE || item.TEXT || '';
             return item;
         }).filter(Boolean).join(', ');
+    } else if (typeof field === 'object') {
+        result = field.VALUE || field.TEXT || '—';
+    } else {
+        result = String(field);
     }
-    if (typeof field === 'object') return field.VALUE || field.TEXT || '—';
-    return String(field);
+    
+    // Очищаем от тегов и BB-кода
+    return cleanText(result) || '—';
 }
 
 function formatDate(field) {
