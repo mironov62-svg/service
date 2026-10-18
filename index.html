@@ -49,10 +49,10 @@
     }
     .card-addr { color: #666; }
 
-    #section-stage1 .card { border-left-color: #2d6cdf; }
+    #section-stage1 .card { border-left-color: #e6e600; }
     #section-stage2 .card { border-left-color: #f5a623; background: #fffdf5; }
-    #section-stage3 .card { border-left-color: #e65100; background: #fff8f3; }
-    #section-stage4 .card { opacity: 0.75; border-left-color: #28a745; }
+    #section-stage3 .card { border-left-color: #ffd54f; background: #fff8f3; }
+    #section-stage4 .card { opacity: 0.75; border-left-color: #00d800; }
 
     .modal-overlay {
         display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -83,21 +83,31 @@
     .files-list a { color: #2d6cdf; font-size: 14px; text-decoration: none; }
     .files-list a:active { opacity: 0.7; }
 
-    /* Кнопки стадий */
+    /* Кнопки стадий (цвета под воронку) */
     .stage-buttons { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
     .stage-btn {
         display: flex; justify-content: space-between; align-items: center;
         width: 100%; padding: 12px 14px; border: 1px solid #e0e0e0;
         border-radius: 10px; background: #fff; font-size: 15px; font-weight: 500;
-        cursor: pointer; text-align: left; color: #333;
+        cursor: pointer; text-align: left; color: #333; transition: opacity 0.2s;
     }
-    .stage-btn:active { background: #f5f5f5; }
-    .stage-btn.current {
-        background: #e3f2fd; border-color: #2d6cdf; color: #1565c0; font-weight: 600;
-    }
-    .stage-btn .stage-btn-mark { font-size: 13px; color: #999; font-weight: normal; }
-    .stage-btn.current .stage-btn-mark { color: #1565c0; }
-    .stage-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .stage-btn:active { opacity: 0.8; }
+    .stage-btn.current { border-width: 2px; font-weight: 700; cursor: default; }
+    
+    /* Стили для конкретных стадий */
+    .stage-btn[data-stage="1"] { border-color: #e6e600; color: #333; }
+    .stage-btn[data-stage="1"].current { background: #e6e600; color: #000; }
+    
+    .stage-btn[data-stage="6"] { border-color: #f5a623; color: #333; }
+    .stage-btn[data-stage="6"].current { background: #f5a623; color: #fff; }
+    
+    .stage-btn[data-stage="3"] { border-color: #ffd54f; color: #333; }
+    .stage-btn[data-stage="3"].current { background: #ffd54f; color: #000; }
+    
+    .stage-btn[data-stage="5"] { border-color: #00d800; color: #333; }
+    .stage-btn[data-stage="5"].current { background: #00d800; color: #fff; }
+
+    .stage-btn:disabled { cursor: default; }
 
     .loading { text-align: center; padding: 40px; color: #999; }
     .error-msg {
@@ -114,7 +124,7 @@
     }
     .toast.show { opacity: 1; }
 
-    /* Дополнительные стили для поля "Выполненные работы" */
+    /* Поле ввода текста */
     .btn-add-work {
         background: #e3f2fd; color: #1565c0; border: 1px dashed #2d6cdf;
         padding: 10px; width: 100%; border-radius: 8px; font-size: 14px;
@@ -135,6 +145,15 @@
         flex: 1; background: #f0f2f5; color: #333; border: none;
         padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer;
     }
+
+    /* Кнопка добавления фото */
+    .btn-add-file {
+        background: #fff; color: #2d6cdf; border: 1px dashed #2d6cdf;
+        padding: 8px 12px; border-radius: 8px; font-size: 14px;
+        font-weight: 600; cursor: pointer; display: inline-flex;
+        align-items: center; gap: 6px; margin-top: 4px;
+    }
+    .btn-add-file:active { background: #f5f5f5; }
 </style>
 </head>
 <body>
@@ -241,16 +260,15 @@ function isEmpty(field) {
 function cleanText(str) {
     if (!str) return '';
     return String(str)
-        .replace(/\[\/?[a-zA-Z0-9=\-\s"'#]+\]/g, ' ') // BB-код
-        .replace(/<[^>]*>/g, ' ') // HTML-теги
-        .replace(/&nbsp;/g, ' ') // Неразрывный пробел
-        .replace(/\s+/g, ' ') // Множественные пробелы
+        .replace(/\[\/?[a-zA-Z0-9=\-\s"'#]+\]/g, ' ')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
         .trim();
 }
 
 function extractText(field) {
     if (isEmpty(field)) return '—';
-    
     let result = '';
     if (Array.isArray(field)) {
         result = field.map(item => {
@@ -295,13 +313,15 @@ async function fetchContactInfo(contactId) {
                 phones = c.PHONE.map(p => p.VALUE).filter(Boolean);
             }
             
-            let display = name;
+            let html = escapeHtml(name);
             if (phones.length > 0) {
-                display += ` (${phones.join(', ')})`;
+                // Формируем ссылки tel: для звонка
+                const phoneLinks = phones.map(p => `<a href="tel:${p.replace(/[^\d+]/g, '')}" style="color:#2d6cdf; text-decoration:none;">${escapeHtml(p)}</a>`).join(', ');
+                html += ` (<a href="tel:${phones[0].replace(/[^\d+]/g, '')}" style="color:#2d6cdf; text-decoration:none;">${escapeHtml(phones[0])}</a>)`;
             }
             
-            contactsCache[contactId] = display;
-            return display;
+            contactsCache[contactId] = html;
+            return html;
         }
     } catch (e) { /* ignore */ }
     return 'Контакт #' + contactId;
@@ -407,12 +427,29 @@ async function openDeal(id) {
         currentDeal = deal;
 
         const contactInfo = await fetchContactInfo(deal.CONTACT_ID);
-        const filesHtml = renderFiles(deal[FIELD_FILES]);
+        
+        // Обработка файлов (получаем ссылки)
+        let filesHtml = '—';
+        if (!isEmpty(deal[FIELD_FILES])) {
+            const fileIds = Array.isArray(deal[FIELD_FILES]) ? deal[FIELD_FILES] : [deal[FIELD_FILES]];
+            const fileLinks = await Promise.all(fileIds.map(async fId => {
+                const idVal = typeof fId === 'object' ? (fId.ID || fId.id || fId.FILE_ID) : fId;
+                try {
+                    const diskRes = await apiCall('disk.file.get', { id: idVal });
+                    if (diskRes.result && diskRes.result.DOWNLOAD_URL) {
+                        return `<a href="${diskRes.result.DOWNLOAD_URL}" target="_blank">📎 ${escapeHtml(diskRes.result.NAME)}</a>`;
+                    }
+                } catch(e) { /* ignore */ }
+                return `<span>📎 Файл #${idVal}</span>`;
+            }));
+            filesHtml = `<div class="files-list">${fileLinks.join('')}</div>`;
+        }
 
         const currentStage = deal.STAGE_ID;
         const buttonsHtml = STAGES.map(s => {
             const isCurrent = s.id === currentStage;
             return `<button class="stage-btn ${isCurrent ? 'current' : ''}"
+                        data-stage="${s.id}"
                         ${isCurrent ? 'disabled' : ''}
                         onclick="changeStage('${s.id}')">
                         <span>${escapeHtml(s.name)}</span>
@@ -424,68 +461,41 @@ async function openDeal(id) {
         let fieldsHtml = '';
 
         if (!isEmpty(deal[FIELD_ADDRESS])) {
-            fieldsHtml += `
-            <div class="field">
-                <div class="field-label">Адрес</div>
-                <div class="field-value">${escapeHtml(extractText(deal[FIELD_ADDRESS]))}</div>
-            </div>`;
+            fieldsHtml += `<div class="field"><div class="field-label">Адрес</div><div class="field-value">${escapeHtml(extractText(deal[FIELD_ADDRESS]))}</div></div>`;
         }
-        
         if (!isEmpty(deal[FIELD_DATE_START])) {
-            fieldsHtml += `
-            <div class="field">
-                <div class="field-label">Дата начала</div>
-                <div class="field-value">${formatDate(deal[FIELD_DATE_START])}</div>
-            </div>`;
+            fieldsHtml += `<div class="field"><div class="field-label">Дата начала</div><div class="field-value">${formatDate(deal[FIELD_DATE_START])}</div></div>`;
         }
-        
         if (!isEmpty(deal[FIELD_EQUIP])) {
-            fieldsHtml += `
-            <div class="field">
-                <div class="field-label">Наименование МИ</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_EQUIP]))}</div>
-            </div>`;
+            fieldsHtml += `<div class="field"><div class="field-label">Наименование МИ</div><div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_EQUIP]))}</div></div>`;
         }
-        
         if (!isEmpty(deal[FIELD_DECLARED])) {
-            fieldsHtml += `
-            <div class="field">
-                <div class="field-label">Заявленная информация</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_DECLARED]))}</div>
-            </div>`;
+            fieldsHtml += `<div class="field"><div class="field-label">Заявленная информация</div><div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_DECLARED]))}</div></div>`;
         }
-        
         if (!isEmpty(deal.COMMENTS)) {
-            fieldsHtml += `
-            <div class="field">
-                <div class="field-label">Комментарий</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal.COMMENTS))}</div>
-            </div>`;
+            fieldsHtml += `<div class="field"><div class="field-label">Комментарий</div><div class="field-value multiline">${escapeHtml(extractText(deal.COMMENTS))}</div></div>`;
         }
-        
         if (!isEmpty(deal[FIELD_MEMO])) {
-            fieldsHtml += `
-            <div class="field">
-                <div class="field-label">Памятка</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_MEMO]))}</div>
-            </div>`;
+            fieldsHtml += `<div class="field"><div class="field-label">Памятка</div><div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_MEMO]))}</div></div>`;
         }
-        
         if (contactInfo) {
-            fieldsHtml += `
-            <div class="field">
-                <div class="field-label">Контакт</div>
-                <div class="field-value">${escapeHtml(contactInfo)}</div>
-            </div>`;
+            fieldsHtml += `<div class="field"><div class="field-label">Контакт</div><div class="field-value">${contactInfo}</div></div>`;
         }
-        
+
+        // --- БЛОК ФАЙЛОВ И ФОТО ---
+        let filesBlockHtml = '';
         if (filesHtml !== '—') {
-            fieldsHtml += `
-            <div class="field">
-                <div class="field-label">Файлы по сделке</div>
-                <div class="field-value">${filesHtml}</div>
-            </div>`;
+            filesBlockHtml += `<div class="field"><div class="field-label">Файлы по сделке</div><div class="field-value">${filesHtml}</div></div>`;
         }
+        // Кнопка добавления фото всегда видна
+        filesBlockHtml += `
+            <div class="field">
+                <input type="file" id="fileInput" accept="image/*" multiple style="display:none;" onchange="uploadFiles()">
+                <button class="btn-add-file" onclick="document.getElementById('fileInput').click()">
+                    📷 Добавить фото
+                </button>
+            </div>
+        `;
 
         // --- БЛОК ВЫПОЛНЕННЫХ РАБОТ ---
         const workDoneText = extractText(deal[FIELD_WORK_DONE]);
@@ -511,6 +521,7 @@ async function openDeal(id) {
             <h3>${escapeHtml(deal.TITLE || ('Сделка #' + deal.ID))}</h3>
 
             ${fieldsHtml}
+            ${filesBlockHtml}
             ${workDoneHtml}
 
             <div class="stage-buttons">
@@ -530,7 +541,55 @@ async function openDeal(id) {
     }
 }
 
-// Открытие поля на редактирование
+// ============================================================
+// ЗАГРУЗКА ФАЙЛОВ (ФОТО)
+// ============================================================
+async function uploadFiles() {
+    const input = document.getElementById('fileInput');
+    if (!input || !input.files.length) return;
+
+    const files = input.files;
+    const btn = document.querySelector('.btn-add-file');
+    const oldText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Загрузка...';
+
+    try {
+        const fileDataArray = [];
+        for (const file of files) {
+            const base64 = await fileToBase64(file);
+            fileDataArray.push([file.name, base64]);
+        }
+
+        const res = await apiCall('crm.deal.update', {
+            id: currentDealId,
+            fields: { [FIELD_FILES]: fileDataArray }
+        });
+        
+        if (res.error) throw new Error(res.error_description || res.error);
+
+        showToast('Фото загружено');
+        openDeal(currentDealId); // Перерисовываем
+        
+    } catch (e) {
+        showToast('Ошибка загрузки: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = oldText;
+    }
+}
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => reader.result.split(',')[1];
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// ============================================================
+// РЕДАКТИРОВАНИЕ ВЫПОЛНЕННЫХ РАБОТ
+// ============================================================
 function editWorkDone(currentText) {
     const workDoneHtml = `
         <div class="field">
@@ -554,13 +613,11 @@ function editWorkDone(currentText) {
     }
 }
 
-// Сохранение текста в Битрикс
 async function saveWorkDone() {
     const input = document.getElementById('workDoneInput');
     if (!input) return;
     
     const text = input.value.trim();
-    
     const btn = document.querySelector('.btn-save');
     if(btn) { btn.disabled = true; btn.textContent = 'Сохранение...'; }
 
@@ -572,29 +629,12 @@ async function saveWorkDone() {
         if (res.error) throw new Error(res.error_description || res.error);
 
         showToast('Выполненные работы сохранены');
-        openDeal(currentDealId); // Перерисовываем карточку
+        openDeal(currentDealId); 
         
     } catch (e) {
         showToast('Ошибка: ' + e.message);
         if(btn) { btn.disabled = false; btn.textContent = 'Сохранить'; }
     }
-}
-
-function renderFiles(field) {
-    if (isEmpty(field)) return '—';
-    let arr = Array.isArray(field) ? field : [field];
-    
-    const portalBase = WEBHOOK_URL.match(/^(https:\/\/[^/]+)/)?.[1] || '';
-    
-    const links = arr.map(f => {
-        if (f && typeof f === 'object') {
-            const fileId = f.id || f.ID || f.FILE_ID;
-            const name = f.name || f.NAME || ('Файл ' + (fileId || ''));
-            return `<a href="${portalBase}/crm/deal/details/${currentDealId}/" target="_blank">📎 ${escapeHtml(name)}</a>`;
-        }
-        return `<a href="${portalBase}/crm/deal/details/${currentDealId}/" target="_blank">📎 Файл #${f}</a>`;
-    });
-    return `<div class="files-list">${links.join('')}</div>`;
 }
 
 function closeModal() {
@@ -615,7 +655,7 @@ async function changeStage(stageId) {
         const workDoneField = currentDeal[FIELD_WORK_DONE];
         if (isEmpty(workDoneField)) {
             showToast('Сначала заполните "Выполненные работы"');
-            return; // Останавливаем выполнение
+            return;
         }
     }
 
