@@ -494,10 +494,10 @@ async function openDeal(id) {
             filesBlockHtml += `<div class="field"><div class="field-label">Файлы по сделке</div><div class="field-value">${filesHtml}</div></div>`;
         }
         
-        filesBlockHtml += `
+               filesBlockHtml += `
             <div class="field">
-                <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
-                <button class="btn-add-file" id="btnAddPhoto">📷 Добавить фото</button>
+                <input type="file" id="fileInput" accept="image/*" multiple style="display:none;" onchange="uploadFiles()">
+                <button class="btn-add-file" onclick="document.getElementById('fileInput').click(); return false;">📷 Добавить фото</button>
             </div>
         `;
 
@@ -543,14 +543,7 @@ async function openDeal(id) {
             </button>
         `;
 
-        // Привязываем обработчик события клика к кнопке добавления фото
-        document.getElementById('btnAddPhoto').addEventListener('click', () => {
-            document.getElementById('fileInput').click();
-        });
-
-        // Привязываем обработчик выбора файла
-        document.getElementById('fileInput').addEventListener('change', uploadFiles);
-
+       
     } catch (e) {
         modal.innerHTML = `
             <button class="modal-close" onclick="closeModal()">✕</button>
