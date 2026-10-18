@@ -160,12 +160,10 @@
 // ============================================================
 // НАСТРОЙКИ — ВПИШИТЕ СВОИ ЗНАЧЕНИЯ
 // ============================================================
-// Вставьте ваш вебхук сюда:
-const WEBHOOK_URL = 'https://b24-964ige.bitrix24.ru/rest/1/s5e6wykwdgtxuuoh/';
+const WEBHOOK_URL = 'https://b24-964ige.bitrix24.ru/rest/1/ВАШ_КОД_ВЕБХУКА/';
 
 const URL_USER_ID = new URLSearchParams(location.search).get('userId');
 
-// Коды стадий воронки «Заявки сервис» (согласно вашему скриншоту)
 const STAGES = [
     { id: '1', name: 'Заявка оформлена' },
     { id: '6', name: 'Принято в работу' },
@@ -173,14 +171,12 @@ const STAGES = [
     { id: '5', name: 'Готово' },
 ];
 
-// Поля сделки
 const FIELD_ADDRESS      = 'UF_CRM_1592536932491';
-const FIELD_EQUIP        = 'UF_CRM_1595995680751';  // Наименование МИ (множественное)
-const FIELD_DECLARED     = 'UF_CRM_1689057182080';  // Заявленная информация
-const FIELD_MEMO         = 'UF_CRM_1592535826065';  // Памятка
-const FIELD_FILES        = 'UF_CRM_1641387572501';  // Файлы (множественное)
-const FIELD_WORK_DONE    = 'UF_CRM_1668223753604';  // Выполненные работы
-// Стандартное поле "Дата начала" в Битрикс24
+const FIELD_EQUIP        = 'UF_CRM_1595995680751';
+const FIELD_DECLARED     = 'UF_CRM_1689057182080';
+const FIELD_MEMO         = 'UF_CRM_1592535826065';
+const FIELD_FILES        = 'UF_CRM_1641387572501';
+const FIELD_WORK_DONE    = 'UF_CRM_1668223753604';
 const FIELD_DATE_START   = 'BEGINDATE';           
 
 // ============================================================
@@ -205,14 +201,28 @@ function apiCall(method, params = {}) {
     }).then(r => r.json());
 }
 
-function extractText(field) {
-    if (field === undefined || field === null || field === '') return '—';
+// Проверка на пустоту
+function isEmpty(field) {
+    if (field === undefined || field === null || field === '') return true;
     if (Array.isArray(field)) {
-        if (field.length === 0) return '—';
+        if (field.length === 0) return true;
+        // Проверяем, есть ли хоть одно непустое значение внутри массива
+        return !field.some(item => {
+            if (typeof item === 'object' && item !== null) return !!(item.VALUE || item.TEXT);
+            return !!item;
+        });
+    }
+    if (typeof field === 'object') return !(field.VALUE || field.TEXT);
+    return String(field).trim() === '—';
+}
+
+function extractText(field) {
+    if (isEmpty(field)) return '—';
+    if (Array.isArray(field)) {
         return field.map(item => {
             if (item && typeof item === 'object') return item.VALUE || item.TEXT || '';
             return item;
-        }).filter(Boolean).join(', ') || '—';
+        }).filter(Boolean).join(', ');
     }
     if (typeof field === 'object') return field.VALUE || field.TEXT || '—';
     return String(field);
@@ -231,17 +241,30 @@ function formatDate(field) {
     return field;
 }
 
-async function fetchContactName(contactId) {
-    if (!contactId) return '—';
+// Обновленная функция получения контакта с телефоном
+async function fetchContactInfo(contactId) {
+    if (!contactId) return null;
     if (contactsCache[contactId]) return contactsCache[contactId];
+    
     try {
         const res = await apiCall('crm.contact.get', { id: contactId });
         if (res.result) {
             const c = res.result;
-            const name = [c.NAME, c.LAST_NAME].filter(Boolean).join(' ').trim()
-                      || c.TITLE || ('Контакт #' + contactId);
-            contactsCache[contactId] = name;
-            return name;
+            let name = [c.NAME, c.LAST_NAME].filter(Boolean).join(' ').trim() 
+                       || c.TITLE || ('Контакт #' + contactId);
+            
+            let phones = [];
+            if (c.PHONE && Array.isArray(c.PHONE)) {
+                phones = c.PHONE.map(p => p.VALUE).filter(Boolean);
+            }
+            
+            let display = name;
+            if (phones.length > 0) {
+                display += ` (${phones.join(', ')})`;
+            }
+            
+            contactsCache[contactId] = display;
+            return display;
         }
     } catch (e) { /* ignore */ }
     return 'Контакт #' + contactId;
@@ -278,7 +301,6 @@ async function loadDeals() {
 
         const deals = res.result || [];
 
-        // Раскладываем по стадиям
         const byStage = {};
         STAGES.forEach(s => byStage[s.id] = []);
         deals.forEach(d => {
@@ -314,7 +336,6 @@ function renderList(containerId, items, emptyText) {
         if (addr !== '—') meta.push(`<span class="card-addr">📍 ${escapeHtml(addr)}</span>`);
         if (date !== '—') meta.push(`<span>📅 ${date}</span>`);
         
-        // Если адрес и дата пустые, выводим хотя бы ID
         let metaStr = meta.length > 0 ? meta.join(' ') : `ID: ${item.ID}`;
 
         return `
@@ -348,10 +369,9 @@ async function openDeal(id) {
         const deal = res.result;
         currentDeal = deal;
 
-        const contactName = await fetchContactName(deal.CONTACT_ID);
+        const contactInfo = await fetchContactInfo(deal.CONTACT_ID);
         const filesHtml = renderFiles(deal[FIELD_FILES]);
 
-        // Блок кнопок стадий
         const currentStage = deal.STAGE_ID;
         const buttonsHtml = STAGES.map(s => {
             const isCurrent = s.id === currentStage;
@@ -363,46 +383,86 @@ async function openDeal(id) {
                     </button>`;
         }).join('');
 
+        // Генерируем HTML только для непустых полей
+        let fieldsHtml = '';
+
+        if (!isEmpty(deal[FIELD_ADDRESS])) {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Адрес</div>
+                <div class="field-value">${escapeHtml(extractText(deal[FIELD_ADDRESS]))}</div>
+            </div>`;
+        }
+        
+        if (!isEmpty(deal[FIELD_DATE_START])) {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Дата начала</div>
+                <div class="field-value">${formatDate(deal[FIELD_DATE_START])}</div>
+            </div>`;
+        }
+        
+        if (!isEmpty(deal[FIELD_EQUIP])) {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Наименование МИ</div>
+                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_EQUIP]))}</div>
+            </div>`;
+        }
+        
+        if (!isEmpty(deal[FIELD_DECLARED])) {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Заявленная информация</div>
+                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_DECLARED]))}</div>
+            </div>`;
+        }
+        
+        if (!isEmpty(deal.COMMENTS)) {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Комментарий</div>
+                <div class="field-value multiline">${escapeHtml(extractText(deal.COMMENTS))}</div>
+            </div>`;
+        }
+        
+        if (!isEmpty(deal[FIELD_MEMO])) {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Памятка</div>
+                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_MEMO]))}</div>
+            </div>`;
+        }
+        
+        if (contactInfo) {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Контакт</div>
+                <div class="field-value">${escapeHtml(contactInfo)}</div>
+            </div>`;
+        }
+        
+        if (filesHtml !== '—') {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Файлы по сделке</div>
+                <div class="field-value">${filesHtml}</div>
+            </div>`;
+        }
+        
+        if (!isEmpty(deal[FIELD_WORK_DONE])) {
+            fieldsHtml += `
+            <div class="field">
+                <div class="field-label">Выполненные работы</div>
+                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_WORK_DONE]))}</div>
+            </div>`;
+        }
+
         modal.innerHTML = `
             <button class="modal-close" onclick="closeModal()">✕</button>
             <h3>${escapeHtml(deal.TITLE || ('Сделка #' + deal.ID))}</h3>
 
-            <div class="field">
-                <div class="field-label">Адрес</div>
-                <div class="field-value">${escapeHtml(extractText(deal[FIELD_ADDRESS]))}</div>
-            </div>
-            <div class="field">
-                <div class="field-label">Дата начала</div>
-                <div class="field-value">${formatDate(deal[FIELD_DATE_START])}</div>
-            </div>
-            <div class="field">
-                <div class="field-label">Наименование МИ</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_EQUIP]))}</div>
-            </div>
-            <div class="field">
-                <div class="field-label">Заявленная информация</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_DECLARED]))}</div>
-            </div>
-            <div class="field">
-                <div class="field-label">Комментарий</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal.COMMENTS))}</div>
-            </div>
-            <div class="field">
-                <div class="field-label">Памятка</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_MEMO]))}</div>
-            </div>
-            <div class="field">
-                <div class="field-label">Контакт</div>
-                <div class="field-value">${escapeHtml(contactName)}</div>
-            </div>
-            <div class="field">
-                <div class="field-label">Файлы по сделке</div>
-                <div class="field-value">${filesHtml}</div>
-            </div>
-            <div class="field">
-                <div class="field-label">Выполненные работы</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_WORK_DONE]))}</div>
-            </div>
+            ${fieldsHtml}
 
             <div class="stage-buttons">
                 ${buttonsHtml}
@@ -422,11 +482,9 @@ async function openDeal(id) {
 }
 
 function renderFiles(field) {
-    if (!field) return '—';
+    if (isEmpty(field)) return '—';
     let arr = Array.isArray(field) ? field : [field];
-    if (arr.length === 0) return '—';
     
-    // Получаем домен портала для ссылки
     const portalBase = WEBHOOK_URL.match(/^(https:\/\/[^/]+)/)?.[1] || '';
     
     const links = arr.map(f => {
@@ -435,7 +493,6 @@ function renderFiles(field) {
             const name = f.name || f.NAME || ('Файл ' + (fileId || ''));
             return `<a href="${portalBase}/crm/deal/details/${currentDealId}/" target="_blank">📎 ${escapeHtml(name)}</a>`;
         }
-        // Если пришел просто ID
         return `<a href="${portalBase}/crm/deal/details/${currentDealId}/" target="_blank">📎 Файл #${f}</a>`;
     });
     return `<div class="files-list">${links.join('')}</div>`;
@@ -455,7 +512,6 @@ async function changeStage(stageId) {
     if (currentDeal && currentDeal.STAGE_ID === stageId) return;
 
     const stageName = STAGES.find(s => s.id === stageId)?.name || stageId;
-    // Блокируем кнопки
     document.querySelectorAll('.stage-btn').forEach(b => b.disabled = true);
 
     try {
@@ -470,7 +526,6 @@ async function changeStage(stageId) {
         loadDeals();
     } catch (e) {
         showToast('Ошибка: ' + e.message);
-        // Разблокируем обратно
         document.querySelectorAll('.stage-btn').forEach(b => {
             if (!b.classList.contains('current')) b.disabled = false;
         });
