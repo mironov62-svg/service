@@ -113,6 +113,28 @@
         pointer-events: none;
     }
     .toast.show { opacity: 1; }
+
+    /* Дополнительные стили для поля "Выполненные работы" */
+    .btn-add-work {
+        background: #e3f2fd; color: #1565c0; border: 1px dashed #2d6cdf;
+        padding: 10px; width: 100%; border-radius: 8px; font-size: 14px;
+        font-weight: 600; cursor: pointer; margin-top: 4px;
+    }
+    .btn-add-work:active { background: #bbdefb; }
+    
+    .edit-textarea {
+        width: 100%; padding: 10px; border: 1px solid #2d6cdf; border-radius: 8px;
+        font-family: inherit; font-size: 15px; resize: vertical; margin-top: 4px;
+        outline: none;
+    }
+    .btn-save {
+        flex: 1; background: #28a745; color: #fff; border: none;
+        padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer;
+    }
+    .btn-cancel {
+        flex: 1; background: #f0f2f5; color: #333; border: none;
+        padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer;
+    }
 </style>
 </head>
 <body>
@@ -160,7 +182,7 @@
 // ============================================================
 // НАСТРОЙКИ — ВПИШИТЕ СВОИ ЗНАЧЕНИЯ
 // ============================================================
-const WEBHOOK_URL = 'https://b24-964ige.bitrix24.ru/rest/1/s5e6wykwdgtxuuoh/';
+const WEBHOOK_URL = 'https://b24-964ige.bitrix24.ru/rest/1/ВАШ_КОД_ВЕБХУКА/';
 
 const URL_USER_ID = new URLSearchParams(location.search).get('userId');
 
@@ -190,7 +212,7 @@ function showToast(msg) {
     const t = document.getElementById('toast');
     t.textContent = msg;
     t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2000);
+    setTimeout(() => t.classList.remove('show'), 2500);
 }
 
 function apiCall(method, params = {}) {
@@ -206,28 +228,23 @@ function isEmpty(field) {
     if (field === undefined || field === null || field === '') return true;
     if (Array.isArray(field)) {
         if (field.length === 0) return true;
-        // Проверяем, есть ли хоть одно непустое значение внутри массива
         return !field.some(item => {
             if (typeof item === 'object' && item !== null) return !!(item.VALUE || item.TEXT);
             return !!item;
         });
     }
     if (typeof field === 'object') return !(field.VALUE || field.TEXT);
-    return String(field).trim() === '—';
+    return String(field).trim() === '—' || String(field).trim() === '';
 }
 
 // Очистка текста от BB-кода и HTML-тегов
 function cleanText(str) {
     if (!str) return '';
     return String(str)
-        // Удаляем BB-код (например, [p], [/p], [b], [br])
-        .replace(/\[\/?[a-zA-Z0-9=\-\s"'#]+\]/g, ' ')
-        // Удаляем HTML-теги (например, <p>, <br>, <strong>)
-        .replace(/<[^>]*>/g, ' ')
-        // Заменяем HTML-сущность неразрывного пробела на обычный
-        .replace(/&nbsp;/g, ' ')
-        // Заменяем множественные пробелы на один
-        .replace(/\s+/g, ' ')
+        .replace(/\[\/?[a-zA-Z0-9=\-\s"'#]+\]/g, ' ') // BB-код
+        .replace(/<[^>]*>/g, ' ') // HTML-теги
+        .replace(/&nbsp;/g, ' ') // Неразрывный пробел
+        .replace(/\s+/g, ' ') // Множественные пробелы
         .trim();
 }
 
@@ -245,8 +262,6 @@ function extractText(field) {
     } else {
         result = String(field);
     }
-    
-    // Очищаем от тегов и BB-кода
     return cleanText(result) || '—';
 }
 
@@ -471,12 +486,23 @@ async function openDeal(id) {
                 <div class="field-value">${filesHtml}</div>
             </div>`;
         }
-        
-        if (!isEmpty(deal[FIELD_WORK_DONE])) {
-            fieldsHtml += `
+
+        // --- БЛОК ВЫПОЛНЕННЫХ РАБОТ ---
+        const workDoneText = extractText(deal[FIELD_WORK_DONE]);
+        const hasWorkDone = !isEmpty(deal[FIELD_WORK_DONE]);
+
+        let workDoneHtml = '';
+        if (hasWorkDone) {
+            workDoneHtml = `
+            <div class="field">
+                <div class="field-label">Выполненные работы <span style="cursor:pointer; color:#2d6cdf;" onclick="editWorkDone('${escapeHtml(workDoneText).replace(/'/g, "\\'")}')">✎</span></div>
+                <div class="field-value multiline">${escapeHtml(workDoneText)}</div>
+            </div>`;
+        } else {
+            workDoneHtml = `
             <div class="field">
                 <div class="field-label">Выполненные работы</div>
-                <div class="field-value multiline">${escapeHtml(extractText(deal[FIELD_WORK_DONE]))}</div>
+                <button class="btn-add-work" onclick="editWorkDone('')">+ Добавить</button>
             </div>`;
         }
 
@@ -485,6 +511,7 @@ async function openDeal(id) {
             <h3>${escapeHtml(deal.TITLE || ('Сделка #' + deal.ID))}</h3>
 
             ${fieldsHtml}
+            ${workDoneHtml}
 
             <div class="stage-buttons">
                 ${buttonsHtml}
@@ -500,6 +527,56 @@ async function openDeal(id) {
             <button class="modal-close" onclick="closeModal()">✕</button>
             <div class="error-msg">Ошибка: ${escapeHtml(e.message)}</div>
         `;
+    }
+}
+
+// Открытие поля на редактирование
+function editWorkDone(currentText) {
+    const workDoneHtml = `
+        <div class="field">
+            <div class="field-label">Выполненные работы</div>
+            <textarea id="workDoneInput" class="edit-textarea" rows="4" placeholder="Введите текст...">${currentText}</textarea>
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button class="btn-save" onclick="saveWorkDone()">Сохранить</button>
+                <button class="btn-cancel" onclick="openDeal(${currentDealId})">Отмена</button>
+            </div>
+        </div>
+    `;
+    
+    const fields = document.querySelectorAll('.field');
+    let targetField = null;
+    fields.forEach(f => {
+        if (f.innerHTML.includes('Выполненные работы')) targetField = f;
+    });
+    
+    if (targetField) {
+        targetField.outerHTML = workDoneHtml;
+    }
+}
+
+// Сохранение текста в Битрикс
+async function saveWorkDone() {
+    const input = document.getElementById('workDoneInput');
+    if (!input) return;
+    
+    const text = input.value.trim();
+    
+    const btn = document.querySelector('.btn-save');
+    if(btn) { btn.disabled = true; btn.textContent = 'Сохранение...'; }
+
+    try {
+        const res = await apiCall('crm.deal.update', {
+            id: currentDealId,
+            fields: { [FIELD_WORK_DONE]: text }
+        });
+        if (res.error) throw new Error(res.error_description || res.error);
+
+        showToast('Выполненные работы сохранены');
+        openDeal(currentDealId); // Перерисовываем карточку
+        
+    } catch (e) {
+        showToast('Ошибка: ' + e.message);
+        if(btn) { btn.disabled = false; btn.textContent = 'Сохранить'; }
     }
 }
 
@@ -532,6 +609,15 @@ function closeModal() {
 async function changeStage(stageId) {
     if (!currentDealId) return;
     if (currentDeal && currentDeal.STAGE_ID === stageId) return;
+
+    // ПРОВЕРКА: Если пытаемся перевести в "Готово" (id: '5')
+    if (stageId === '5') {
+        const workDoneField = currentDeal[FIELD_WORK_DONE];
+        if (isEmpty(workDoneField)) {
+            showToast('Сначала заполните "Выполненные работы"');
+            return; // Останавливаем выполнение
+        }
+    }
 
     const stageName = STAGES.find(s => s.id === stageId)?.name || stageId;
     document.querySelectorAll('.stage-btn').forEach(b => b.disabled = true);
