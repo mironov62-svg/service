@@ -437,7 +437,6 @@ async function openDeal(id) {
         // Обработка файлов
         let filesHtml = '—';
         if (!isEmpty(deal[FIELD_FILES])) {
-            // API возвращает массив ID файлов
             const fileIds = Array.isArray(deal[FIELD_FILES]) ? deal[FIELD_FILES] : [deal[FIELD_FILES]];
             const fileLinks = await Promise.all(fileIds.map(async fId => {
                 const idVal = typeof fId === 'object' ? (fId.ID || fId.id || fId.FILE_ID) : fId;
@@ -494,7 +493,8 @@ async function openDeal(id) {
             filesBlockHtml += `<div class="field"><div class="field-label">Файлы по сделке</div><div class="field-value">${filesHtml}</div></div>`;
         }
         
-               filesBlockHtml += `
+        // ИСПОЛЬЗУЕМ ПРЯМОЙ ONCLICK И ONCHANGE ДЛЯ МАКСИМАЛЬНОЙ СОВМЕСТИМОСТИ
+        filesBlockHtml += `
             <div class="field">
                 <input type="file" id="fileInput" accept="image/*" multiple style="display:none;" onchange="uploadFiles()">
                 <button class="btn-add-file" onclick="document.getElementById('fileInput').click(); return false;">📷 Добавить фото</button>
@@ -542,8 +542,6 @@ async function openDeal(id) {
                 Закрыть
             </button>
         `;
-
-       
     } catch (e) {
         modal.innerHTML = `
             <button class="modal-close" onclick="closeModal()">✕</button>
@@ -560,7 +558,7 @@ async function uploadFiles() {
     if (!input || !input.files.length) return;
 
     const files = input.files;
-    const btn = document.getElementById('btnAddPhoto');
+    const btn = document.querySelector('.btn-add-file');
     const oldText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = 'Загрузка...';
@@ -666,14 +664,12 @@ async function changeStage(stageId) {
     if (stageId === '5') {
         const workDoneField = currentDeal[FIELD_WORK_DONE];
         if (isEmpty(workDoneField)) {
-            // Записываем текст ошибки и перерисовываем модалку
             validationError = 'Нельзя перевести в "Готово": сначала заполните поле "Выполненные работы".';
             openDeal(currentDealId);
             return;
         }
     }
 
-    // Сбрасываем ошибку, если проверка пройдена
     validationError = '';
 
     const stageName = STAGES.find(s => s.id === stageId)?.name || stageId;
